@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "DEALER - POS",
+  "short_name": "DEALER POS",
+  "description": "Liquor store point of sale application with transaction ledger and checkout settlement.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#16111f",
+  "theme_color": "#16111f",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
