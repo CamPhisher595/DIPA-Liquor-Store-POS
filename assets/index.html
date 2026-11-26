@@ -2837,6 +2837,13 @@ function loadStoreSettingsIntoReceipt() {
     };
 }
 
+// Display integer Android version codes as major.minor (for example, 8 -> 8.0).
+function formatAppVersionLabel(value) {
+    const label = String(value ?? '').trim();
+    const match = label.match(/^([vV]?)(\d+)$/);
+    return match ? `${match[1]}${match[2]}.0` : label;
+}
+
 async function checkForGithubAppUpdate() {
     const bridge = window.AndroidFileBridge;
     const status = document.getElementById('appUpdateStatus');
@@ -2864,25 +2871,44 @@ async function checkForGithubAppUpdate() {
         );
         const latestUrl = release.html_url || releasesUrl;
 
-        if (apk && bridge && typeof bridge.getAppVersionCode === 'function') {
-            const versionCode = Number(apk.name.match(/-v([1-9]\d*)\.apk$/i)?.[1]);
+        // On Android, compare the published APK's versionCode with the
+        // installed app before showing any release/download information.
+        // This prevents an older GitHub release from appearing as an update
+        // after the user has already installed that version or a newer one.
+        if (bridge && typeof bridge.getAppVersionCode === 'function') {
             const currentVersionCode = Number(bridge.getAppVersionCode());
-            if (!Number.isSafeInteger(versionCode) || !Number.isSafeInteger(currentVersionCode)) {
-                throw new Error('GitHub release or installed app has an invalid version code.');
+            if (!Number.isSafeInteger(currentVersionCode) || currentVersionCode < 0) {
+                throw new Error('The installed app has an invalid version code.');
             }
-            if (versionCode <= currentVersionCode) {
-                status.textContent = `You’re up to date (version ${currentVersionCode}).`;
+
+            if (!apk) {
+                status.textContent = `Installed version: ${formatAppVersionLabel(currentVersionCode)}\nNo newer updates available.`;
+                link.hidden = true;
                 return;
             }
-            status.textContent = `Version ${release.tag_name || versionCode} is available.`;
+
+            const versionCode = Number(apk.name.match(/-v([1-9]\d*)\.apk$/i)?.[1]);
+            if (!Number.isSafeInteger(versionCode)) {
+                status.textContent = `Installed version: ${formatAppVersionLabel(currentVersionCode)}\nNo newer updates available.`;
+                link.hidden = true;
+                return;
+            }
+            if (versionCode <= currentVersionCode) {
+                status.textContent = `Installed version: ${formatAppVersionLabel(currentVersionCode)}\nNo newer updates available.`;
+                link.hidden = true;
+                return;
+            }
+
+            status.textContent = `Version ${formatAppVersionLabel(release.tag_name || versionCode)} is available.`;
             link.href = apk.browser_download_url;
             link.textContent = 'Download app update';
         } else {
+            // In a normal browser there is no installed Android version to compare.
             status.textContent = release.tag_name
-                ? `Latest release: ${release.tag_name}`
+                ? `Latest Version: ${formatAppVersionLabel(release.tag_name)}`
                 : 'A new GitHub release is available.';
             link.href = apk?.browser_download_url || latestUrl;
-            link.textContent = apk ? 'Download app update' : 'View GitHub release';
+            link.textContent = apk ? 'Download app update' : 'Update';
         }
         link.hidden = false;
     } catch (error) {
