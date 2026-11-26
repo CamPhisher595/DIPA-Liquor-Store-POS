@@ -2851,75 +2851,93 @@ async function checkForGithubAppUpdate() {
     const releasesUrl = 'https://github.com/CamPhisher595/DIPA-Liquor-Store-POS/releases/latest';
     if (!status || !link) return;
 
-    status.textContent = 'Checking GitHub Releases…';
+    status.textContent = 'Checking for updates…';
     link.hidden = true;
 
     try {
-        const response = await fetch(
+        const apiUrls = [
             'https://api.github.com/repos/CamPhisher595/DIPA-Liquor-Store-POS/releases/latest',
-            { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }
-        );
-        if (response.status === 404) {
-            status.textContent = 'No published releases are available yet.';
+            'https://api.github.com/repos/CamPhisher595/DIPA-Liquor-Store-POS/releases?per_page=1'
+        ];
+        let release = null;
+        let sawForbidden = false;
+
+        for (const apiUrl of apiUrls) {
+            try {
+                const response = await fetch(apiUrl, {
+                    headers: {
+                        Accept: 'application/vnd.github+json',
+                        'X-GitHub-Api-Version': '2022-11-28'
+                    },
+                    cache: 'no-store'
+                });
+
+                if (response.status === 404) continue;
+                if (response.status === 403) {
+                    sawForbidden = true;
+                    continue;
+                }
+                if (!response.ok) continue;
+
+                const payload = await response.json();
+                release = Array.isArray(payload) ? (payload[0] || null) : payload;
+                if (release) break;
+            } catch (apiError) {
+                console.warn('GitHub update endpoint unavailable.', apiError);
+            }
+        }
+
+        if (!release) {
+            // Keep the update area clean when GitHub has no release data or
+            // blocks the API request (for example, HTTP 403/rate limiting).
+            status.textContent = 'No updates available';
+            link.hidden = true;
             return;
         }
-        if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
 
-        const release = await response.json();
         const apk = (release.assets || []).find(asset =>
             /^DIPA-Liquor-Store-POS-v([1-9]\d*)\.apk$/i.test(asset.name)
         );
         const latestUrl = release.html_url || releasesUrl;
 
-        // On Android, compare the published APK's versionCode with the
-        // installed app before showing any release/download information.
-        // This prevents an older GitHub release from appearing as an update
-        // after the user has already installed that version or a newer one.
         if (bridge && typeof bridge.getAppVersionCode === 'function') {
             const currentVersionCode = Number(bridge.getAppVersionCode());
             if (!Number.isSafeInteger(currentVersionCode) || currentVersionCode < 0) {
-                throw new Error('The installed app has an invalid version code.');
+                status.textContent = 'No updates available';
+                link.hidden = true;
+                return;
             }
 
             if (!apk) {
-                status.textContent = `Installed version: ${formatAppVersionLabel(currentVersionCode)}\nNo newer updates available.`;
+                status.textContent = 'No updates available';
                 link.hidden = true;
                 return;
             }
 
             const versionCode = Number(apk.name.match(/-v([1-9]\d*)\.apk$/i)?.[1]);
-            if (!Number.isSafeInteger(versionCode)) {
-                status.textContent = `Installed version: ${formatAppVersionLabel(currentVersionCode)}\nNo newer updates available.`;
-                link.hidden = true;
-                return;
-            }
-            if (versionCode <= currentVersionCode) {
-                status.textContent = `Installed version: ${formatAppVersionLabel(currentVersionCode)}\nNo newer updates available.`;
+            if (!Number.isSafeInteger(versionCode) || versionCode <= currentVersionCode) {
+                status.textContent = 'No updates available';
                 link.hidden = true;
                 return;
             }
 
-            status.textContent = `Version ${formatAppVersionLabel(release.tag_name || versionCode)} is available.`;
+            const latestVersion = formatAppVersionLabel(release.tag_name || versionCode);
+            status.textContent = `Latest version: ${latestVersion}`;
             link.href = apk.browser_download_url;
-            link.textContent = 'Download app update';
+            link.textContent = 'Update';
         } else {
-            // In a normal browser there is no installed Android version to compare.
-            status.textContent = release.tag_name
-                ? `Latest Version: ${formatAppVersionLabel(release.tag_name)}`
-                : 'A new GitHub release is available.';
+            const latestVersion = formatAppVersionLabel(release.tag_name || 'Latest');
+            status.textContent = `Latest version: ${latestVersion}`;
             link.href = apk?.browser_download_url || latestUrl;
-            link.textContent = apk ? 'Download app update' : 'Update';
+            link.textContent = 'Update';
         }
         link.hidden = false;
     } catch (error) {
         console.warn('Could not check GitHub for app updates.', error);
-        status.textContent = 'Could not check for updates. Please try again later.';
-        link.href = releasesUrl;
-        link.textContent = 'Open GitHub Releases';
-        link.hidden = false;
+        status.textContent = 'No updates available';
+        link.hidden = true;
     }
 }
-
 window.checkForGithubAppUpdate = checkForGithubAppUpdate;
 
 // Always start with checkout closed; it should open only after an explicit Checkout action.
