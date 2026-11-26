@@ -5,12 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val firebaseConfigText = rootProject.file("web-assets/firebase-config.json").readText()
-val firebaseAuthDomain = Regex("\"authDomain\"\\s*:\\s*\"([^\"]+)\"")
-    .find(firebaseConfigText)
-    ?.groupValues
-    ?.get(1)
-    ?: throw GradleException("Firebase authDomain is missing from web-assets/firebase-config.json.")
 val signingPropertiesFile = rootProject.file("signing.properties")
 val signingProperties = Properties().apply {
     if (signingPropertiesFile.isFile) {
@@ -26,14 +20,13 @@ android {
         applicationId = "com.dealer.pos"
         minSdk = 23
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.7"
-        manifestPlaceholders["firebaseAuthDomain"] = firebaseAuthDomain
+        versionCode = 8
+        versionName = "2.8"
     }
 
     sourceSets {
         getByName("main") {
-            assets.setSrcDirs(listOf(rootProject.file("web-assets")))
+            assets.setSrcDirs(listOf(rootProject.file("assets")))
         }
     }
 

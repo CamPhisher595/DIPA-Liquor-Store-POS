@@ -6,4 +6,3 @@ local.properties
 *.jks
 *.keystore
 signing.properties
-firebase-debug.log

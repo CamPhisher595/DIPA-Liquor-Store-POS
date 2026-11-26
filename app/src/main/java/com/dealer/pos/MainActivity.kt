@@ -24,15 +24,14 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import java.io.File
-import org.json.JSONObject
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
-    private lateinit var firebaseAuthDomain: String
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
-    private var pendingEmailLink: String? = null
     private val assetLoader by lazy {
         WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -42,17 +41,8 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        firebaseAuthDomain = assets.open("firebase-config.json").bufferedReader().use {
-            JSONObject(it.readText()).getString("authDomain")
-        }
-        pendingEmailLink = validFirebaseEmailLink(intent?.data)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
-        window.statusBarColor = Color.rgb(244, 241, 251)
-        window.navigationBarColor = Color.rgb(244, 241, 251)
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility =
-            android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
-                android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        applySystemBarTheme(isDark = false)
 
         webView = WebView(this).apply {
             isVerticalScrollBarEnabled = false
@@ -67,17 +57,36 @@ class MainActivity : Activity() {
             addJavascriptInterface(AndroidFileBridge(), "AndroidFileBridge")
             webViewClient = PosWebViewClient()
             webChromeClient = PosWebChromeClient()
+            setOnApplyWindowInsetsListener { view, insets ->
+                val systemBars = WindowInsetsCompat.toWindowInsetsCompat(insets, view)
+                    .getInsets(
+                        WindowInsetsCompat.Type.statusBars() or
+                            WindowInsetsCompat.Type.navigationBars()
+                    )
+                view.setPadding(0, 0, 0, 0)
+                if (view is WebView) {
+                    view.evaluateJavascript(
+                        "document.documentElement.style.setProperty('--android-status-bar-inset', '${systemBars.top}px')",
+                        null
+                    )
+                }
+                insets
+            }
         }
 
         setContentView(webView)
         webView.loadUrl("$APP_ASSET_ORIGIN/assets/index.html")
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        pendingEmailLink = validFirebaseEmailLink(intent.data)
-        dispatchPendingEmailLink()
+    private fun applySystemBarTheme(isDark: Boolean) {
+        val background = if (isDark) Color.rgb(18, 14, 25) else Color.rgb(244, 241, 251)
+        window.statusBarColor = background
+        window.navigationBarColor = background
+
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !isDark
+            isAppearanceLightNavigationBars = !isDark
+        }
     }
 
     @Deprecated("Use system back navigation on newer Android versions")
@@ -161,11 +170,6 @@ class MainActivity : Activity() {
     }
 
     private inner class PosWebViewClient : WebViewClient() {
-        override fun onPageFinished(view: WebView?, url: String?) {
-            super.onPageFinished(view, url)
-            dispatchPendingEmailLink()
-        }
-
         override fun shouldInterceptRequest(
             view: WebView?,
             request: WebResourceRequest
@@ -185,31 +189,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun validFirebaseEmailLink(uri: Uri?): String? {
-        if (uri == null || uri.scheme != "https" || uri.host != firebaseAuthDomain ||
-            !uri.path.orEmpty().startsWith("/__/auth/links")
-        ) {
-            return null
-        }
-        return uri.toString()
-    }
-
-    private fun dispatchPendingEmailLink() {
-        val link = pendingEmailLink ?: return
-        if (!::webView.isInitialized) return
-        pendingEmailLink = null
-        webView.evaluateJavascript(
-            "window.pendingFirebaseEmailLink = ${JSONObject.quote(link)};" +
-                "if (typeof window.handleFirebaseEmailLink === 'function') {" +
-                "const pendingLink = window.pendingFirebaseEmailLink;" +
-                "window.pendingFirebaseEmailLink = '';" +
-                "window.handleFirebaseEmailLink(pendingLink);" +
-                "}",
-            null
-        )
-    }
-
     private inner class AndroidFileBridge {
+        @JavascriptInterface
+        fun setStatusBarTheme(isDark: Boolean) {
+            runOnUiThread {
+                applySystemBarTheme(isDark)
+            }
+        }
+
         @JavascriptInterface
         fun getAppVersionCode(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             packageManager.getPackageInfo(packageName, 0).longVersionCode.toInt()
